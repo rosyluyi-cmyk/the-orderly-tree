@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>每周任务清单</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', 'Noto Sans SC', sans-serif;
+        }
+        .task {
+            transition: background-color 0.2s, opacity 0.2s;
+            border-left-width: 4px;
+        }
+        .task:hover {
+            background-color: #f0f4f8;
+        }
+        .task.dragging {
+            opacity: 0.5;
+            transform: rotate(2deg);
+        }
+        .task-main {
+             border-left-color: #f59e0b; /* amber-500 */
+        }
+        .task-side {
+            border-left-color: #3b82f6; /* blue-500 */
+        }
+        .tag-badge {
+            display: inline-block;
+            background-color: #e5e7eb; /* gray-200 */
+            color: #4b5563; /* gray-600 */
+            padding: 2px 8px;
+            font-size: 10px;
+            font-weight: 500;
+            border-radius: 12px;
+            margin-right: 4px;
+            margin-top: 4px;
+        }
+        .drag-over {
+            border: 2px dashed #3498db;
+            background-color: #ecf0f1;
+        }
+        .day-column {
+            min-height: 400px;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+    <div id="app" class="container mx-auto p-4 md:p-6">
+        
+        <!-- Header -->
+        <header class="flex flex-col md:flex-row justify-between items-center mb-6">
+            <h1 class="text-3xl font-bold text-gray-700">每周任务清单</h1>
+            <div class="flex items-center space-x-2 mt-4 md:mt-0 flex-wrap justify-center">
+                <button id="prev-week" class="px-4 py-2 bg-white border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 transition">- 上一周</button>
+                <button id="today" class="px-4 py-2 bg-white border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 transition">回到本周</button>
+                <button id="next-week" class="px-4 py-2 bg-white border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 transition">下一周 +</button>
+                <button id="export-csv" class="px-4 py-2 bg-green-500 text-white border border-green-600 rounded-lg shadow-sm hover:bg-green-600 transition">导出为表格 (CSV)</button>
+            </div>
+        </header>
+        
+        <p id="week-range" class="text-center text-lg text-gray-500 mb-6"></p>
+
+        <!-- Main Grid -->
+        <main class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-4">
+            <!-- Weekday Columns -->
+            <div id="day-0" class="day-column bg-white rounded-xl shadow-sm p-4 border border-gray-200"></div>
+            <div id="day-1" class="day-column bg-white rounded-xl shadow-sm p-4 border border-gray-200"></div>
+            <div id="day-2" class="day-column bg-white rounded-xl shadow-sm p-4 border border-gray-200"></div>
+            <div id="day-3" class="day-column bg-white rounded-xl shadow-sm p-4 border border-gray-200"></div>
+            <div id="day-4" class="day-column bg-white rounded-xl shadow-sm p-4 border border-gray-200"></div>
+
+            <!-- Current Day & Completed Columns -->
+            <div id="current-day" class="day-column bg-yellow-50 rounded-xl shadow-sm p-4 border-2 border-yellow-300 lg:col-span-1 md:col-span-2"></div>
+            <div id="completed-tasks" class="day-column bg-green-50 rounded-xl shadow-sm p-4 border-2 border-green-200 lg:col-span-1 md:col-span-2"></div>
+        </main>
+        
+        <!-- Modal for editing task -->
+        <div id="edit-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+            <div class="bg-white rounded-lg p-6 w-11/12 md:w-1/3">
+                <h3 class="text-lg font-medium mb-4">编辑任务</h3>
+                <div class="space-y-4">
+                    <input type="text" id="edit-input" class="w-full border-gray-300 rounded-md shadow-sm p-2" placeholder="任务内容">
+                     <select id="edit-importance" class="w-full border-gray-300 rounded-md shadow-sm p-2">
+                        <option value="main">主线任务</option>
+                        <option value="side">支线任务</option>
+                    </select>
+                    <input type="text" id="edit-tags" class="w-full border-gray-300 rounded-md shadow-sm p-2" placeholder="标签,用逗号隔开">
+                </div>
+                <div class="mt-4 flex justify-end space-x-2">
+                    <button id="cancel-edit" class="px-4 py-2 bg-gray-200 rounded-md hover:bg-gray-300">取消</button>
+                    <button id="save-edit" class="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600">保存</button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // App State
+            const days = ['周一', '周二', '周三', '周四', '周五'];
+            let currentWeekStart = getStartOfWeek(new Date());
+            let tasks = JSON.parse(localStorage.getItem('tasks')) || {};
+
+            // Modal Elements
+            const editModal = document.getElementById('edit-modal');
+            const editInput = document.getElementById('edit-input');
+            const editImportance = document.getElementById('edit-importance');
+            const editTags = document.getElementById('edit-tags');
+            const saveEditBtn = document.getElementById('save-edit');
+            const cancelEditBtn = document.getElementById('cancel-edit');
+            let taskToEdit = null;
+            
+            // --- CORE APP LOGIC ---
+            function getStartOfWeek(date) {
+                const d = new Date(date);
+                const day = d.getDay();
+                const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+                return new Date(d.setDate(diff));
+            }
+
+            function formatDate(date) {
+                const year = date.getFullYear();
+                const month = (date.getMonth() + 1).toString().padStart(2, '0');
+                const day = date.getDate().toString().padStart(2, '0');
+                return `${year}-${month}-${day}`;
+            }
+
+            function render() {
+                renderWeek();
+                renderCurrentDay();
+                renderCompletedTasks();
+            }
+            
+            function renderWeek() {
+                const weekRangeEl = document.getElementById('week-range');
+                const endOfWeek = new Date(currentWeekStart);
+                endOfWeek.setDate(currentWeekStart.getDate() + 4);
+                weekRangeEl.textContent = `${formatDate(currentWeekStart)} ~ ${formatDate(endOfWeek)}`;
+
+                days.forEach((day, index) => {
+                    const dayContainer = document.getElementById(`day-${index}`);
+                    const date = new Date(currentWeekStart);
+                    date.setDate(date.getDate() + index);
+                    const dateStr = formatDate(date);
+
+                    dayContainer.innerHTML = `
+                        <h2 class="text-xl font-semibold mb-4 text-center">${day} <span class="text-sm text-gray-500">${date.getMonth()+1}/${date.getDate()}</span></h2>
+                        <div id="tasks-${dateStr}" class="tasks-container space-y-2 flex-grow"></div>
+                        <div class="mt-4 space-y-2">
+                            <input type="text" id="input-${dateStr}" class="w-full border-gray-300 rounded-md shadow-sm p-2" placeholder="添加新任务...">
+                            <div class="flex space-x-2">
+                                <select id="importance-${dateStr}" class="w-1/2 border-gray-300 rounded-md shadow-sm p-2 text-sm">
+                                    <option value="main">主线任务</option>
+                                    <option value="side">支线任务</option>
+                                </select>
+                                <input type="text" id="tags-${dateStr}" class="w-1/2 border-gray-300 rounded-md shadow-sm p-2 text-sm" placeholder="标签,用逗号隔开">
+                            </div>
+                            <button data-date="${dateStr}" class="add-task-btn w-full bg-blue-500 text-white rounded-md py-2 hover:bg-blue-600 transition">添加</button>
+                        </div>
+                    `;
+                    renderTasks(dateStr);
+                });
+
+                attachEventListeners();
+            }
+
+            function renderTasks(dateStr) {
+                const tasksContainer = document.getElementById(`tasks-${dateStr}`);
+                if (!tasksContainer) return;
+                tasksContainer.innerHTML = '';
+                const dayTasks = tasks[dateStr] || [];
+                dayTasks.filter(t => !t.completed).forEach(task => {
+                    tasksContainer.appendChild(createTaskElement(task));
+                });
+            }
+
+            function createTaskElement(task) {
+                 const taskEl = document.createElement('div');
+                taskEl.id = task.id;
+                taskEl.className = `task p-3 bg-white rounded-lg shadow-sm flex flex-col items-start cursor-move ${task.importance === 'main' ? 'task-main' : 'task-side'}`;
+                taskEl.draggable = true;
+
+                const tagsHTML = (task.tags && task.tags.length > 0) 
+                    ? task.tags.map(tag => `<span class="tag-badge">${tag}</span>`).join('') 
+                    : '';
+
+                taskEl.innerHTML = `
+                    <div class="w-full flex items-center justify-between">
+                        <div class="flex items-center min-w-0">
+                            <input type="checkbox" class="complete-checkbox h-5 w-5 rounded-full text-green-500 focus:ring-green-400 border-gray-300 mr-3 flex-shrink-0" ${task.completed ? 'checked' : ''}>
+                            <span class="task-text flex-grow truncate">${task.text}</span>
+                        </div>
+                        <div class="flex items-center flex-shrink-0 ml-2">
+                            <button class="edit-btn text-gray-400 hover:text-blue-500 mr-2">✏️</button>
+                            <button class="delete-btn text-gray-400 hover:text-red-500">🗑️</button>
+                        </div>
+                    </div>
+                    <div class="w-full mt-1 pl-8">
+                        ${tagsHTML}
+                    </div>
+                `;
+
+                taskEl.querySelector('.complete-checkbox').addEventListener('change', () => toggleComplete(task.id, task.date));
+                taskEl.querySelector('.delete-btn').addEventListener('click', () => deleteTask(task.id, task.date));
+                taskEl.querySelector('.edit-btn').addEventListener('click', () => openEditModal(task));
+                taskEl.addEventListener('dragstart', handleDragStart);
+                return taskEl;
+            }
+
+            function renderCurrentDay() {
+                const currentDayContainer = document.getElementById('current-day');
+                const today = new Date();
+                const todayStr = formatDate(today);
+                
+                currentDayContainer.innerHTML = `
+                    <h2 class="text-xl font-semibold mb-4 text-center text-yellow-800">今日待办 <span class="text-sm text-yellow-600">${today.getMonth()+1}/${today.getDate()}</span></h2>
+                    <div id="current-tasks-container" class="tasks-container space-y-2 flex-grow"></div>
+                `;
+
+                const currentTasksContainer = document.getElementById('current-tasks-container');
+                let overdueTasks = [];
+                for (const dateStr in tasks) {
+                    if (dateStr <= todayStr) {
+                         tasks[dateStr].forEach(task => {
+                            if (!task.completed) {
+                                overdueTasks.push(task);
+                            }
+                        });
+                    }
+                }
+                
+                overdueTasks.sort((a,b) => new Date(a.date) - new Date(b.date));
+                overdueTasks.forEach(task => {
+                     currentTasksContainer.appendChild(createTaskElement(task));
+                });
+            }
+            
+            function renderCompletedTasks() {
+                const completedContainer = document.getElementById('completed-tasks');
+                completedContainer.innerHTML = `
+                    <h2 class="text-xl font-semibold mb-4 text-center text-green-800">已完成</h2>
+                    <div id="completed-tasks-list" class="tasks-container space-y-2 flex-grow"></div>
+                `;
+                const listEl = document.getElementById('completed-tasks-list');
+                let allCompleted = [];
+                for (const dateStr in tasks) {
+                    tasks[dateStr].forEach(task => {
+                        if(task.completed) allCompleted.push(task);
+                    });
+                }
+                allCompleted.sort((a,b) => new Date(b.completedAt) - new Date(a.completedAt));
+
+                allCompleted.forEach(task => {
+                    const taskEl = createTaskElement(task);
+                    taskEl.querySelector('.task-text').style.textDecoration = 'line-through';
+                    taskEl.querySelector('.task-text').style.color = '#9ca3af';
+                    listEl.appendChild(taskEl);
+                });
+            }
+            
+            function attachEventListeners() {
+                document.querySelectorAll('.add-task-btn').forEach(btn => {
+                    btn.onclick = (e) => {
+                        const date = e.target.dataset.date;
+                        const input = document.getElementById(`input-${date}`);
+                        const importanceInput = document.getElementById(`importance-${date}`);
+                        const tagsInput = document.getElementById(`tags-${date}`);
+                        if (input.value.trim()) {
+                            addTask(input.value, date, importanceInput.value, tagsInput.value);
+                            input.value = '';
+                            tagsInput.value = '';
+                        }
+                    };
+                });
+                 document.querySelectorAll('input[type="text"]').forEach(input => {
+                    input.onkeydown = (e) => {
+                        if (e.key === 'Enter') {
+                           const btn = e.target.closest('.day-column').querySelector('.add-task-btn');
+                           if(btn) btn.click();
+                        }
+                    };
+                });
+                
+                const containers = document.querySelectorAll('.tasks-container');
+                containers.forEach(container => {
+                    container.addEventListener('dragover', handleDragOver);
+                    container.addEventListener('dragleave', handleDragLeave);
+                    container.addEventListener('drop', handleDrop);
+                });
+            }
+            
+            // --- DATA MUTATION FUNCTIONS ---
+            function saveAndRender() {
+                localStorage.setItem('tasks', JSON.stringify(tasks));
+                render();
+            }
+
+            function addTask(text, date, importance, tagsStr) {
+                if (!tasks[date]) tasks[date] = [];
+                const tags = tagsStr.split(',').map(tag => tag.trim()).filter(tag => tag);
+                const newTask = {
+                    id: 'task-' + Date.now(), text, completed: false, date,
+                    completedAt: null, importance, tags
+                };
+                tasks[date].push(newTask);
+                saveAndRender();
+            }
+
+            function deleteTask(taskId, date) {
+                if (tasks[date]) {
+                    tasks[date] = tasks[date].filter(task => task.id !== taskId);
+                    saveAndRender();
+                }
+            }
+            
+            function toggleComplete(taskId, date) {
+                if (tasks[date]) {
+                    const task = tasks[date].find(t => t.id === taskId);
+                    if(task) {
+                        task.completed = !task.completed;
+                        task.completedAt = task.completed ? new Date().toISOString() : null;
+                        saveAndRender();
+                    }
+                }
+            }
+
+            function openEditModal(task) {
+                taskToEdit = task;
+                editInput.value = task.text;
+                editImportance.value = task.importance || 'main';
+                editTags.value = (task.tags || []).join(', ');
+                editModal.classList.remove('hidden');
+                editModal.classList.add('flex');
+                editInput.focus();
+            }
+
+            function closeEditModal() {
+                editModal.classList.add('hidden');
+                editModal.classList.remove('flex');
+                taskToEdit = null;
+            }
+
+            saveEditBtn.addEventListener('click', () => {
+                if (taskToEdit && editInput.value.trim()) {
+                    const { id, date } = taskToEdit;
+                    const task = tasks[date].find(t => t.id === id);
+                    if (task) {
+                        task.text = editInput.value.trim();
+                        task.importance = editImportance.value;
+                        task.tags = editTags.value.split(',').map(tag => tag.trim()).filter(tag => tag);
+                        saveAndRender();
+                    }
+                }
+                closeEditModal();
+            });
+            
+            editInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') saveEditBtn.click(); });
+            cancelEditBtn.addEventListener('click', closeEditModal);
+
+            // --- NAVIGATION, DRAG/DROP, AND EXPORT ---
+            document.getElementById('prev-week').addEventListener('click', () => {
+                currentWeekStart.setDate(currentWeekStart.getDate() - 7);
+                render();
+            });
+
+            document.getElementById('next-week').addEventListener('click', () => {
+                currentWeekStart.setDate(currentWeekStart.getDate() + 7);
+                render();
+            });
+
+            document.getElementById('today').addEventListener('click', () => {
+                currentWeekStart = getStartOfWeek(new Date());
+                render();
+            });
+
+            document.getElementById('export-csv').addEventListener('click', exportTasksToCSV);
+
+            let draggedItem = null;
+
+            function handleDragStart(e) {
+                draggedItem = e.target.closest('.task');
+                setTimeout(() => { draggedItem.classList.add('dragging'); }, 0);
+            }
+
+            function handleDragOver(e) {
+                e.preventDefault();
+                const dropZone = e.target.closest('.tasks-container');
+                if (dropZone) dropZone.classList.add('drag-over');
+            }
+            
+            function handleDragLeave(e) {
+                const dropZone = e.target.closest('.tasks-container');
+                if (dropZone) dropZone.classList.remove('drag-over');
+            }
+
+            function handleDrop(e) {
+                e.preventDefault();
+                const dropZone = e.target.closest('.tasks-container');
+                if (dropZone && draggedItem) {
+                    dropZone.classList.remove('drag-over');
+                    const taskId = draggedItem.id;
+                    
+                    let originalDate, task;
+                    for(const date in tasks) {
+                        const found = tasks[date].find(t => t.id === taskId);
+                        if(found) { task = found; originalDate = date; break; }
+                    }
+                    
+                    if(task) {
+                        tasks[originalDate] = tasks[originalDate].filter(t => t.id !== taskId);
+                        
+                        const newDateStr = dropZone.id.replace('tasks-', '');
+                        if (newDateStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                            task.date = newDateStr;
+                            if(!tasks[newDateStr]) tasks[newDateStr] = [];
+                            tasks[newDateStr].push(task);
+                        } else {
+                            tasks[originalDate].push(task);
+                        }
+                        saveAndRender();
+                    }
+                }
+                if(draggedItem) draggedItem.classList.remove('dragging');
+                draggedItem = null;
+            }
+
+            function exportTasksToCSV() {
+                const tasksData = JSON.parse(localStorage.getItem('tasks')) || {};
+                
+                let csvContent = "\uFEFF"; // BOM for Excel to recognize UTF-8
+                const headers = ["日期", "状态", "重要性", "任务内容", "标签", "完成于"];
+                csvContent += headers.join(",") + "\r\n";
+
+                const allTasks = [];
+                for (const date in tasksData) {
+                    tasksData[date].forEach(task => allTasks.push(task));
+                }
+
+                allTasks.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+                allTasks.forEach(task => {
+                    const status = task.completed ? "已完成" : "待办";
+                    const importance = task.importance === 'main' ? "主线任务" : "支线任务";
+                    const text = `"${task.text.replace(/"/g, '""')}"`; // Handle quotes and commas in text
+                    const tags = `"${(task.tags || []).join(', ')}"`;
+                    const completedAt = task.completedAt ? new Date(task.completedAt).toLocaleString('zh-CN') : "";
+                    const row = [task.date, status, importance, text, tags, `"${completedAt}"`].join(",");
+                    csvContent += row + "\r\n";
+                });
+
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement("a");
+                const url = URL.createObjectURL(blob);
+                link.setAttribute("href", url);
+                link.setAttribute("download", `任务清单_${formatDate(new Date())}.csv`);
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
+
+            // --- INITIALIZATION ---
+            render();
+        });
+    </script>
+
+</body>
+</html>
+
