@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>每周任务清单</title>
+    <title>序时之木 | 每周任务清单</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
@@ -53,7 +53,7 @@
         
         <!-- Header -->
         <header class="flex flex-col md:flex-row justify-between items-center mb-6">
-            <h1 class="text-3xl font-bold text-gray-700">每周任务清单</h1>
+            <h1 class="text-3xl font-bold text-gray-700">序时之木</h1>
             <div class="flex items-center space-x-2 mt-4 md:mt-0 flex-wrap justify-center">
                 <button id="prev-week" class="px-4 py-2 bg-white border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 transition">- 上一周</button>
                 <button id="today" class="px-4 py-2 bg-white border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 transition">回到本周</button>
@@ -65,17 +65,16 @@
         <p id="week-range" class="text-center text-lg text-gray-500 mb-6"></p>
 
         <!-- Main Grid -->
-        <main class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-4">
+        <main class="grid grid-cols-1 lg:grid-cols-6 gap-4">
             <!-- Weekday Columns -->
-            <div id="day-0" class="day-column bg-white rounded-xl shadow-sm p-4 border border-gray-200"></div>
-            <div id="day-1" class="day-column bg-white rounded-xl shadow-sm p-4 border border-gray-200"></div>
-            <div id="day-2" class="day-column bg-white rounded-xl shadow-sm p-4 border border-gray-200"></div>
-            <div id="day-3" class="day-column bg-white rounded-xl shadow-sm p-4 border border-gray-200"></div>
-            <div id="day-4" class="day-column bg-white rounded-xl shadow-sm p-4 border border-gray-200"></div>
+            <div id="day-0" class="day-column rounded-xl shadow-sm p-4 border border-gray-200"></div>
+            <div id="day-1" class="day-column rounded-xl shadow-sm p-4 border border-gray-200"></div>
+            <div id="day-2" class="day-column rounded-xl shadow-sm p-4 border border-gray-200"></div>
+            <div id="day-3" class="day-column rounded-xl shadow-sm p-4 border border-gray-200"></div>
+            <div id="day-4" class="day-column rounded-xl shadow-sm p-4 border border-gray-200"></div>
 
-            <!-- Current Day & Completed Columns -->
-            <div id="current-day" class="day-column bg-yellow-50 rounded-xl shadow-sm p-4 border-2 border-yellow-300 lg:col-span-1 md:col-span-2"></div>
-            <div id="completed-tasks" class="day-column bg-green-50 rounded-xl shadow-sm p-4 border-2 border-green-200 lg:col-span-1 md:col-span-2"></div>
+            <!-- Current Day Column -->
+            <div id="current-day" class="day-column bg-yellow-50 rounded-xl shadow-sm p-4 border-2 border-yellow-300"></div>
         </main>
         
         <!-- Modal for editing task -->
@@ -97,6 +96,18 @@
             </div>
         </div>
 
+        <!-- Modal for delete confirmation -->
+        <div id="delete-confirm-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+            <div class="bg-white rounded-lg p-6 w-11/12 md:w-1/4 shadow-xl">
+                <h3 class="text-lg font-medium mb-4">确认删除</h3>
+                <p id="delete-confirm-text" class="text-gray-600 mb-6">你确定要删除这个任务吗？此操作无法撤销。</p>
+                <div class="mt-4 flex justify-end space-x-2">
+                    <button id="cancel-delete" class="px-4 py-2 bg-gray-200 rounded-md hover:bg-gray-300">取消</button>
+                    <button id="confirm-delete" class="px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600">确认删除</button>
+                </div>
+            </div>
+        </div>
+
     </div>
 
     <script>
@@ -114,6 +125,11 @@
             const saveEditBtn = document.getElementById('save-edit');
             const cancelEditBtn = document.getElementById('cancel-edit');
             let taskToEdit = null;
+
+            const deleteConfirmModal = document.getElementById('delete-confirm-modal');
+            const confirmDeleteBtn = document.getElementById('confirm-delete');
+            const cancelDeleteBtn = document.getElementById('cancel-delete');
+            let taskToDelete = null;
             
             // --- CORE APP LOGIC ---
             function getStartOfWeek(date) {
@@ -133,7 +149,6 @@
             function render() {
                 renderWeek();
                 renderCurrentDay();
-                renderCompletedTasks();
             }
             
             function renderWeek() {
@@ -142,8 +157,12 @@
                 endOfWeek.setDate(currentWeekStart.getDate() + 4);
                 weekRangeEl.textContent = `${formatDate(currentWeekStart)} ~ ${formatDate(endOfWeek)}`;
 
+                const dayColors = ['bg-blue-50', 'bg-teal-50', 'bg-purple-50', 'bg-pink-50', 'bg-orange-50'];
+
                 days.forEach((day, index) => {
                     const dayContainer = document.getElementById(`day-${index}`);
+                    dayContainer.className = `day-column rounded-xl shadow-sm p-4 border border-gray-200 ${dayColors[index]}`;
+                    
                     const date = new Date(currentWeekStart);
                     date.setDate(date.getDate() + index);
                     const dateStr = formatDate(date);
@@ -174,13 +193,13 @@
                 if (!tasksContainer) return;
                 tasksContainer.innerHTML = '';
                 const dayTasks = tasks[dateStr] || [];
-                dayTasks.filter(t => !t.completed).forEach(task => {
+                dayTasks.forEach(task => {
                     tasksContainer.appendChild(createTaskElement(task));
                 });
             }
 
             function createTaskElement(task) {
-                 const taskEl = document.createElement('div');
+                const taskEl = document.createElement('div');
                 taskEl.id = task.id;
                 taskEl.className = `task p-3 bg-white rounded-lg shadow-sm flex flex-col items-start cursor-move ${task.importance === 'main' ? 'task-main' : 'task-side'}`;
                 taskEl.draggable = true;
@@ -190,10 +209,10 @@
                     : '';
 
                 taskEl.innerHTML = `
-                    <div class="w-full flex items-center justify-between">
-                        <div class="flex items-center min-w-0">
-                            <input type="checkbox" class="complete-checkbox h-5 w-5 rounded-full text-green-500 focus:ring-green-400 border-gray-300 mr-3 flex-shrink-0" ${task.completed ? 'checked' : ''}>
-                            <span class="task-text flex-grow truncate">${task.text}</span>
+                    <div class="w-full flex items-start justify-between">
+                        <div class="flex items-start flex-grow">
+                            <input type="checkbox" class="complete-checkbox h-5 w-5 rounded-full text-green-500 focus:ring-green-400 border-gray-300 mr-3 mt-1 flex-shrink-0" ${task.completed ? 'checked' : ''}>
+                            <span class="task-text flex-grow whitespace-normal break-words text-sm">${task.text}</span>
                         </div>
                         <div class="flex items-center flex-shrink-0 ml-2">
                             <button class="edit-btn text-gray-400 hover:text-blue-500 mr-2">✏️</button>
@@ -205,8 +224,15 @@
                     </div>
                 `;
 
+                if (task.completed) {
+                    const textSpan = taskEl.querySelector('.task-text');
+                    textSpan.style.textDecoration = 'line-through';
+                    textSpan.style.color = '#9ca3af';
+                    taskEl.classList.add('opacity-60');
+                }
+
                 taskEl.querySelector('.complete-checkbox').addEventListener('change', () => toggleComplete(task.id, task.date));
-                taskEl.querySelector('.delete-btn').addEventListener('click', () => deleteTask(task.id, task.date));
+                taskEl.querySelector('.delete-btn').addEventListener('click', () => openDeleteModal(task));
                 taskEl.querySelector('.edit-btn').addEventListener('click', () => openEditModal(task));
                 taskEl.addEventListener('dragstart', handleDragStart);
                 return taskEl;
@@ -237,29 +263,6 @@
                 overdueTasks.sort((a,b) => new Date(a.date) - new Date(b.date));
                 overdueTasks.forEach(task => {
                      currentTasksContainer.appendChild(createTaskElement(task));
-                });
-            }
-            
-            function renderCompletedTasks() {
-                const completedContainer = document.getElementById('completed-tasks');
-                completedContainer.innerHTML = `
-                    <h2 class="text-xl font-semibold mb-4 text-center text-green-800">已完成</h2>
-                    <div id="completed-tasks-list" class="tasks-container space-y-2 flex-grow"></div>
-                `;
-                const listEl = document.getElementById('completed-tasks-list');
-                let allCompleted = [];
-                for (const dateStr in tasks) {
-                    tasks[dateStr].forEach(task => {
-                        if(task.completed) allCompleted.push(task);
-                    });
-                }
-                allCompleted.sort((a,b) => new Date(b.completedAt) - new Date(a.completedAt));
-
-                allCompleted.forEach(task => {
-                    const taskEl = createTaskElement(task);
-                    taskEl.querySelector('.task-text').style.textDecoration = 'line-through';
-                    taskEl.querySelector('.task-text').style.color = '#9ca3af';
-                    listEl.appendChild(taskEl);
                 });
             }
             
@@ -310,13 +313,6 @@
                 tasks[date].push(newTask);
                 saveAndRender();
             }
-
-            function deleteTask(taskId, date) {
-                if (tasks[date]) {
-                    tasks[date] = tasks[date].filter(task => task.id !== taskId);
-                    saveAndRender();
-                }
-            }
             
             function toggleComplete(taskId, date) {
                 if (tasks[date]) {
@@ -361,6 +357,31 @@
             
             editInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') saveEditBtn.click(); });
             cancelEditBtn.addEventListener('click', closeEditModal);
+
+            function openDeleteModal(task) {
+                taskToDelete = task;
+                deleteConfirmModal.classList.remove('hidden');
+                deleteConfirmModal.classList.add('flex');
+            }
+
+            function closeDeleteModal() {
+                deleteConfirmModal.classList.add('hidden');
+                deleteConfirmModal.classList.remove('flex');
+                taskToDelete = null;
+            }
+
+            confirmDeleteBtn.addEventListener('click', () => {
+                if (taskToDelete) {
+                    const { id, date } = taskToDelete;
+                    if (tasks[date]) {
+                        tasks[date] = tasks[date].filter(task => task.id !== id);
+                        saveAndRender();
+                    }
+                }
+                closeDeleteModal();
+            });
+
+            cancelDeleteBtn.addEventListener('click', closeDeleteModal);
 
             // --- NAVIGATION, DRAG/DROP, AND EXPORT ---
             document.getElementById('prev-week').addEventListener('click', () => {
